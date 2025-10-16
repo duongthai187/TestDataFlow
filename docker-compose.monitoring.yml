@@ -1,0 +1,205 @@
+version: "3.8"
+
+networks:
+  datanet:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    hostname: prometheus
+    container_name: prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks: [datanet]
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    hostname: alertmanager
+    container_name: alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+    networks: [datanet]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    hostname: grafana
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin12345
+      - GF_SERVER_HTTP_PORT=3000
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+    ports:
+      - "3000:3000"
+    depends_on: [prometheus, loki]
+    networks: [datanet]
+
+  loki:
+    image: grafana/loki:3.1.0
+    hostname: loki
+    container_name: loki
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./monitoring/loki/config.yaml:/etc/loki/config.yaml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    networks: [datanet]
+
+  promtail:
+    image: grafana/promtail:3.1.0
+    hostname: promtail
+    container_name: promtail
+    command: ["-config.file=/etc/promtail/config.yaml"]
+    volumes:
+      - ./monitoring/promtail/config.yaml:/etc/promtail/config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/log:/var/log:ro
+    depends_on: [loki]
+    networks: [datanet]
+
+  mysql-exporter:
+    image: prom/mysqld-exporter:v0.15.1
+    hostname: mysql-exporter
+    container_name: mysql-exporter
+    environment:
+      - DATA_SOURCE_NAME=root:root@(mysql:3306)/
+    depends_on:
+      - mysql
+    ports:
+      - "9104:9104"
+    networks: [datanet]
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    hostname: postgres-exporter
+    container_name: postgres-exporter
+    environment:
+      - DATA_SOURCE_NAME=postgresql://app:app123@postgres:5432/appdb?sslmode=disable
+      - PG_EXPORTER_AUTO_DISCOVER_DATABASES=true
+    depends_on:
+      - postgres
+    ports:
+      - "9187:9187"
+    networks: [datanet]
+
+  cassandra-seed-exporter:
+    image: bitnami/jmx-exporter:latest
+    hostname: cassandra-seed-exporter
+    container_name: cassandra-seed-exporter
+    command: ["java","-jar","/opt/bitnami/jmx-exporter/jmx_prometheus_httpserver.jar","0.0.0.0:9500","/config/config.yml"]
+    volumes:
+      - ./monitoring/cassandra-exporter/seed.yml:/config/config.yml:ro
+    depends_on: [cassandra-seed]
+    ports:
+      - "9500:9500"
+    networks: [datanet]
+
+  cassandra-node2-exporter:
+    image: bitnami/jmx-exporter:latest
+    hostname: cassandra-node2-exporter
+    container_name: cassandra-node2-exporter
+    command: ["java","-jar","/opt/bitnami/jmx-exporter/jmx_prometheus_httpserver.jar","0.0.0.0:9500","/config/config.yml"]
+    volumes:
+      - ./monitoring/cassandra-exporter/node2.yml:/config/config.yml:ro
+    depends_on: [cassandra-node2]
+    ports:
+      - "9501:9500"
+    networks: [datanet]
+
+  cassandra-node3-exporter:
+    image: bitnami/jmx-exporter:latest
+    hostname: cassandra-node3-exporter
+    container_name: cassandra-node3-exporter
+    command: ["java","-jar","/opt/bitnami/jmx-exporter/jmx_prometheus_httpserver.jar","0.0.0.0:9500","/config/config.yml"]
+    volumes:
+      - ./monitoring/cassandra-exporter/node3.yml:/config/config.yml:ro
+    depends_on: [cassandra-node3]
+    ports:
+      - "9502:9500"
+    networks: [datanet]
+
+  connect-exporter:
+    image: bitnami/jmx-exporter:latest
+    hostname: connect-exporter
+    container_name: connect-exporter
+    command: ["java","-jar","/opt/bitnami/jmx-exporter/jmx_prometheus_httpserver.jar","0.0.0.0:9404","/config/config.yml"]
+    volumes:
+      - ./monitoring/connect-exporter/config.yml:/config/config.yml:ro
+    depends_on: [connect]
+    ports:
+      - "9404:9404"
+    networks: [datanet]
+
+  trino-exporter:
+    image: bitnami/jmx-exporter:latest
+    hostname: trino-exporter
+    container_name: trino-exporter
+    command: ["java","-jar","/opt/bitnami/jmx-exporter/jmx_prometheus_httpserver.jar","0.0.0.0:9405","/config/config.yml"]
+    volumes:
+      - ./monitoring/trino-exporter/config.yml:/config/config.yml:ro
+    depends_on: [trino]
+    ports:
+      - "9405:9405"
+    networks: [datanet]
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.24.0
+    hostname: blackbox-exporter
+    container_name: blackbox-exporter
+    command: ["--config.file=/config/blackbox.yml"]
+    volumes:
+      - ./monitoring/blackbox/blackbox.yml:/config/blackbox.yml:ro
+    ports:
+      - "9115:9115"
+    networks: [datanet]
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    hostname: cadvisor
+    container_name: cadvisor
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - "8080:8080"
+    networks: [datanet]
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.7.0
+    hostname: kafka-exporter
+    container_name: kafka-exporter
+    command:
+      - "--kafka.server=kafka:9092"
+      - "--concurrent=5"
+    ports:
+      - "9308:9308"
+    depends_on: [kafka]
+    networks: [datanet]
+

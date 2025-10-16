@@ -1,0 +1,65 @@
+groups:
+  - name: dataflow-runtime
+    rules:
+      - alert: FlinkJobRestarting
+        expr: increase(flink_jobmanager_job_numRestarts[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Job Flink restart bất thường
+          description: "Kiểm tra checkpoint và log cho job {{ $labels.job_name }}"
+
+      - alert: KafkaConsumerLagHigh
+        expr: kafka_consumergroup_lag > 10000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consumer lag tăng cao"
+          description: "Kiểm tra job tiêu thụ topic {{ $labels.topic }}"
+
+      - alert: ContainerCpuHigh
+        expr: rate(container_cpu_usage_seconds_total{image!=""}[5m]) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container CPU sử dụng cao"
+          description: "Container {{ $labels.container_label_com_docker_compose_service }} đang dùng >80% CPU"
+
+      - alert: ServiceUnavailable
+        expr: up{job=~"spark-master|spark-worker|cassandra|mysql|postgres|doris|minio|connect|trino"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Dịch vụ {{ $labels.job }} không khả dụng"
+          description: "Kiểm tra container và exporter tương ứng của {{ $labels.job }}"
+
+      - alert: MinioFreeCapacityLow
+        expr: minio_cluster_capacity_free_bytes < 2 * 1024 * 1024 * 1024
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Dung lượng MinIO còn ít"
+          description: "Chỉ còn {{ $value | humanizeBinary }} dung lượng trống"
+
+      - alert: TrinoQueuedQueriesHigh
+        expr: trino_execution_queuedqueries > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Trino có nhiều query chờ"
+          description: "Tham chiếu dashboard hoặc Trino UI để điều tra truy vấn chậm"
+
+      - alert: KafkaConnectFailedTask
+        expr: kafka_connect_connector_failed_task_count > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka Connect có task thất bại"
+          description: "Connector {{ $labels.connector }} có task lỗi, kiểm tra log connect"

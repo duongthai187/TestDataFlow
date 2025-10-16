@@ -1,0 +1,325 @@
+version: "3.8"
+
+networks:
+  datanet:
+    driver: bridge
+
+volumes:
+  kafka_data:
+  mysql_data:
+  doris_data:
+  minio_data:
+  trino_data:
+  cassandra_data1:
+  cassandra_data2:
+  cassandra_data3:
+  couchdb_data:
+  postgres_data:
+  flink_checkpoints:
+
+services:
+  # Apache Kafka (single-node KRaft)
+  kafka:
+    image: apache/kafka:latest
+    hostname: kafka
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "9999:9999"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      JMX_PORT: 9999
+      KAFKA_JMX_PORT: 9999
+      KAFKA_JMX_HOSTNAME: 0.0.0.0
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks: [datanet]
+
+  # Debezium Kafka Connect (CDC từ MySQL -> Kafka)
+  connect:
+    image: quay.io/debezium/connect:2.6
+    depends_on: [kafka]
+    ports:
+      - "8083:8083"
+      - "9102:9102"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: "1"
+      CONFIG_STORAGE_TOPIC: connect_configs
+      OFFSET_STORAGE_TOPIC: connect_offsets
+      STATUS_STORAGE_TOPIC: connect_statuses
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      JMX_PORT: 9102
+      KAFKA_JMX_PORT: 9102
+      KAFKA_JMX_HOSTNAME: connect
+      # Mở rộng dễ: thêm nhiều connector cho nhiều DB nguồn
+    networks: [datanet]
+
+  # OLTP demo
+  mysql:
+    image: mysql:8.0
+    command: ["--default-authentication-plugin=mysql_native_password"]
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: oltp
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/conf.d:/etc/mysql/conf.d
+      # ./mysql/init:/docker-entrypoint-initdb.d  # (sẽ dùng ở bước 2 để tạo schema + dữ liệu)
+    networks: [datanet]
+
+  # Apache Doris (standalone demo: FE + BE trong 1 container)
+  doris:
+    image: dyrnq/doris:latest
+    depends_on: [kafka]
+    ports:
+      - "8030:8030"  # FE HTTP
+      - "8040:8040"  # BE Web
+      - "9030:9030"  # FE MySQL protocol
+    environment:
+      - DORIS_HEAP_OPTS=-Xms1g -Xmx1g
+    volumes:
+      - doris_data:/opt/doris
+    networks: [datanet]
+
+  # MinIO (S3 for Iceberg)
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: admin12345
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    ports:
+      - "9000:9000"  # S3 API
+      - "9001:9001"  # Console
+    volumes:
+      - minio_data:/data
+    networks: [datanet]
+
+  # Nessie (Iceberg REST catalog)
+  nessie:
+    image: ghcr.io/projectnessie/nessie:0.80.0
+    environment:
+      QUARKUS_HTTP_PORT: "19120"
+      NESSIE_SERVER_DEFAULT_BRANCH: "main"
+    ports:
+      - "19120:19120"
+    networks: [datanet]
+
+  # Trino cho SQL ad-hoc trên Iceberg
+  trino:
+    image: trinodb/trino:440
+    depends_on: [minio, nessie]
+    ports:
+      - "8081:8080"
+      - "9080:9080"
+    environment:
+      - JAVA_TOOL_OPTIONS=-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=9080 -Dcom.sun.management.jmxremote.rmi.port=9080 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.local.only=false -Djava.rmi.server.hostname=trino
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog
+      - trino_data:/data
+    networks: [datanet]
+
+  # Spark (batch ETL/ELT vào Iceberg)
+  spark-master:
+    image: apache/spark:3.5.1
+    hostname: spark-master
+    container_name: spark-master
+    command:
+      - /opt/spark/sbin/start-master.sh
+      - --host
+      - spark-master
+      - --port
+      - "7077"
+      - --webui-port
+      - "8080"
+    environment:
+      - SPARK_NO_DAEMONIZE=1
+      - SPARK_METRICS_CONF=/opt/spark/conf/metrics.properties
+    ports:
+      - "17077:7077"
+      - "8082:8080"
+    volumes:
+      - ./monitoring/spark/metrics.properties:/opt/spark/conf/metrics.properties:ro
+    networks: [datanet]
+
+  spark-worker:
+    image: apache/spark:3.5.1
+    hostname: spark-worker
+    container_name: spark-worker
+    depends_on: [spark-master]
+    command:
+      - /opt/spark/sbin/start-worker.sh
+      - --webui-port
+      - "8081"
+      - spark://spark-master:7077
+    environment:
+      - SPARK_NO_DAEMONIZE=1
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+      - SPARK_METRICS_CONF=/opt/spark/conf/metrics.properties
+    ports:
+      - "18083:8081"
+    volumes:
+      - ./monitoring/spark/metrics.properties:/opt/spark/conf/metrics.properties:ro
+    networks: [datanet]
+
+  # Apache Flink (streaming engine + Paimon connector)
+  flink-jobmanager:
+    image: apache/flink:1.18.1-scala_2.12
+    hostname: flink-jobmanager
+    container_name: flink-jobmanager
+    depends_on: [kafka]
+    command: jobmanager
+    ports:
+      - "8088:8081"  # Flink Web UI
+      - "6123:6123"  # RPC
+      - "9249:9249"  # Metrics (Prometheus)
+    environment:
+      - |
+        FLINK_PROPERTIES=
+          jobmanager.rpc.address: flink-jobmanager
+          jobmanager.rpc.port: 6123
+          rest.address: flink-jobmanager
+          rest.port: 8081
+          state.backend: filesystem
+          state.checkpoints.dir: file:///opt/flink/checkpoints
+          taskmanager.numberOfTaskSlots: 2
+          parallelism.default: 2
+          metrics.reporters: prom
+          metrics.reporter.prom.class: org.apache.flink.metrics.prometheus.PrometheusReporter
+          metrics.reporter.prom.port: 9249
+    volumes:
+      - ./flink/lib:/opt/flink/usrlib
+      - flink_checkpoints:/opt/flink/checkpoints
+    networks: [datanet]
+
+  flink-taskmanager:
+    image: apache/flink:1.18.1-scala_2.12
+    hostname: flink-taskmanager
+    container_name: flink-taskmanager
+    depends_on: [flink-jobmanager]
+    command: taskmanager
+    ports:
+      - "9250:9250"
+    environment:
+      - |
+        FLINK_PROPERTIES=
+          jobmanager.rpc.address: flink-jobmanager
+          jobmanager.rpc.port: 6123
+          taskmanager.numberOfTaskSlots: 2
+          parallelism.default: 2
+          state.backend: filesystem
+          state.checkpoints.dir: file:///opt/flink/checkpoints
+          metrics.reporters: prom
+          metrics.reporter.prom.class: org.apache.flink.metrics.prometheus.PrometheusReporter
+          metrics.reporter.prom.port: 9250
+    volumes:
+      - ./flink/lib:/opt/flink/usrlib
+      - flink_checkpoints:/opt/flink/checkpoints
+    networks: [datanet]
+
+  # Apache Cassandra cluster (3 nodes)
+  cassandra-seed:
+    image: cassandra:4.1
+    hostname: cassandra-seed
+    container_name: cassandra-seed
+    environment:
+      - CASSANDRA_CLUSTER_NAME=DataflowCluster
+      - CASSANDRA_DC=dc1
+      - CASSANDRA_RACK=rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - MAX_HEAP_SIZE=512M
+      - HEAP_NEWSIZE=128M
+      - LOCAL_JMX=no
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra_data1:/var/lib/cassandra
+    networks: [datanet]
+
+  cassandra-node2:
+    image: cassandra:4.1
+    hostname: cassandra-node2
+    container_name: cassandra-node2
+    depends_on: [cassandra-seed]
+    environment:
+      - CASSANDRA_CLUSTER_NAME=DataflowCluster
+      - CASSANDRA_DC=dc1
+      - CASSANDRA_RACK=rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_SEEDS=cassandra-seed
+      - MAX_HEAP_SIZE=512M
+      - HEAP_NEWSIZE=128M
+      - LOCAL_JMX=no
+    volumes:
+      - cassandra_data2:/var/lib/cassandra
+    networks: [datanet]
+
+  cassandra-node3:
+    image: cassandra:4.1
+    hostname: cassandra-node3
+    container_name: cassandra-node3
+    depends_on: [cassandra-seed]
+    environment:
+      - CASSANDRA_CLUSTER_NAME=DataflowCluster
+      - CASSANDRA_DC=dc1
+      - CASSANDRA_RACK=rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_SEEDS=cassandra-seed
+      - MAX_HEAP_SIZE=512M
+      - HEAP_NEWSIZE=128M
+      - LOCAL_JMX=no
+    volumes:
+      - cassandra_data3:/var/lib/cassandra
+    networks: [datanet]
+
+  # Apache CouchDB (document store)
+  couchdb:
+    image: couchdb:3
+    hostname: couchdb
+    container_name: couchdb
+    environment:
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: admin123
+    ports:
+      - "5984:5984"
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+    networks: [datanet]
+
+  # PostgreSQL (additional relational database)
+  postgres:
+    image: postgres:15
+    hostname: postgres
+    container_name: dataflow-postgres
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app123
+      POSTGRES_DB: appdb
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [datanet]

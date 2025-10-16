@@ -1,0 +1,35 @@
+hostPort: trino:9080
+lowercaseOutputName: true
+lowercaseOutputLabelNames: true
+
+rules:
+  - pattern: 'trino.execution<name=QueryManager><>(QueuedQueries|RunningQueries|BlockedQueries|SubmittedQueries)'
+    name: trino_execution_$1
+    type: GAUGE
+  - pattern: 'trino.execution<name=QueryManager><>(CompletedQueries|FailedQueries|AbandonedQueries)'
+    name: trino_execution_$1_total
+    type: COUNTER
+  - pattern: 'trino.execution<name=QueryManager><>(.*)'
+    name: trino_execution_$1
+    type: GAUGE
+  - pattern: 'trino.memory<type=ClusterMemoryPool, name=(.+)><>(FreeBytes|ReservedBytes|TotalBytes)'
+    name: trino_memory_$2
+    type: GAUGE
+    labels:
+      pool: "$1"
+  - pattern: 'trino.memory<type=MemoryPool, name=(.+)><>(FreeBytes|ReservedBytes|TotalBytes)'
+    name: trino_memory_pool_$2
+    type: GAUGE
+    labels:
+      pool: "$1"
+  - pattern: 'trino.execution<name=TaskManager><>(RunningSplits|BlockedSplits|QueuedSplits)'
+    name: trino_execution_$1
+    type: GAUGE
+  - pattern: 'trino.execution<name=TaskManager><>(.*)'
+    name: trino_execution_task_$1
+    type: GAUGE
+  - pattern: 'io.airlift.stats<type=SimpleTimeStat, name=(.+)><>(Count|Max|Min|Avg)'
+    name: trino_stats_$2
+    labels:
+      metric: "$1"
+    type: GAUGE

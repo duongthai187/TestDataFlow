@@ -1,0 +1,32 @@
+hostPort: cassandra-node3:7199
+lowercaseOutputName: true
+lowercaseOutputLabelNames: true
+
+rules:
+  - pattern: 'org.apache.cassandra.metrics<type=(\w+), name=(\w+)><>Value'
+    name: cassandra_$1_$2
+    type: GAUGE
+    help: Cassandra metric $1 $2 gauge
+  - pattern: 'org.apache.cassandra.metrics<type=(\w+), keyspace=(\w+), scope=(\w+), name=(\w+)><>Value'
+    name: cassandra_$1_$4
+    type: GAUGE
+    help: Cassandra metric $1 keyspace scope $4 gauge
+    labels:
+      keyspace: "$2"
+      scope: "$3"
+  - pattern: 'org.apache.cassandra.metrics<type=(\w+), keyspace=(\w+), name=(\w+)><>Value'
+    name: cassandra_$1_$3
+    type: GAUGE
+    help: Cassandra metric $1 keyspace $3 gauge
+    labels:
+      keyspace: "$2"
+  - pattern: 'org.apache.cassandra.metrics<type=(\w+), scope=(\w+), name=(\w+)><>Count'
+    name: cassandra_$1_$3_total
+    type: COUNTER
+    help: Cassandra counter metric $1 scope $3
+    labels:
+      scope: "$2"
+  - pattern: 'org.apache.cassandra.metrics<type=(\w+), name=(\w+)><>Count'
+    name: cassandra_$1_$2_total
+    type: COUNTER
+    help: Cassandra counter metric $1 $2
