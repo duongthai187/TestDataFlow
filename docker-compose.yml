@@ -48,6 +48,151 @@ services:
       - kafka_data:/var/lib/kafka/data
     networks: [datanet]
 
+    payment-service:
+      build:
+        context: .
+        dockerfile: services/Dockerfile
+        args:
+          SERVICE_MODULE: services.payment_service.app.main:app
+      environment:
+        SERVICE_APP_NAME: Payment Service
+        SERVICE_ENVIRONMENT: local
+        SERVICE_LOG_LEVEL: INFO
+        SERVICE_ENABLE_METRICS: "true"
+        SERVICE_ENABLE_TRACING: "false"
+      ports:
+        - "8106:8000"
+      depends_on:
+        - postgres
+        - kafka
+      networks: [datanet]
+
+    inventory-service:
+      build:
+        context: .
+        dockerfile: services/Dockerfile
+        args:
+          SERVICE_MODULE: services.inventory_service.app.main:app
+      environment:
+        SERVICE_APP_NAME: Inventory Service
+        SERVICE_ENVIRONMENT: local
+        SERVICE_LOG_LEVEL: INFO
+        SERVICE_ENABLE_METRICS: "true"
+        SERVICE_ENABLE_TRACING: "false"
+      ports:
+        - "8107:8000"
+      depends_on:
+        - postgres
+      networks: [datanet]
+
+    fulfillment-service:
+      build:
+        context: .
+        dockerfile: services/Dockerfile
+        args:
+          SERVICE_MODULE: services.fulfillment_service.app.main:app
+      environment:
+        SERVICE_APP_NAME: Fulfillment Service
+        SERVICE_ENVIRONMENT: local
+        SERVICE_LOG_LEVEL: INFO
+        SERVICE_ENABLE_METRICS: "true"
+        SERVICE_ENABLE_TRACING: "false"
+      ports:
+        - "8108:8000"
+      depends_on:
+        - postgres
+        - kafka
+      networks: [datanet]
+
+    support-service:
+      build:
+        context: .
+        dockerfile: services/Dockerfile
+        args:
+          SERVICE_MODULE: services.support_service.app.main:app
+      environment:
+        SERVICE_APP_NAME: Support Service
+        SERVICE_ENVIRONMENT: local
+        SERVICE_LOG_LEVEL: INFO
+        SERVICE_ENABLE_METRICS: "true"
+        SERVICE_ENABLE_TRACING: "false"
+      ports:
+        - "8109:8000"
+      depends_on:
+        - postgres
+      networks: [datanet]
+
+    notification-service:
+      build:
+        context: .
+        dockerfile: services/Dockerfile
+        args:
+          SERVICE_MODULE: services.notification_service.app.main:app
+      environment:
+        SERVICE_APP_NAME: Notification Service
+        SERVICE_ENVIRONMENT: local
+        SERVICE_LOG_LEVEL: INFO
+        SERVICE_ENABLE_METRICS: "true"
+        SERVICE_ENABLE_TRACING: "false"
+      ports:
+        - "8110:8000"
+      depends_on:
+        - kafka
+      networks: [datanet]
+
+    fraud-service:
+      build:
+        context: .
+        dockerfile: services/Dockerfile
+        args:
+          SERVICE_MODULE: services.fraud_service.app.main:app
+      environment:
+        SERVICE_APP_NAME: Fraud Service
+        SERVICE_ENVIRONMENT: local
+        SERVICE_LOG_LEVEL: INFO
+        SERVICE_ENABLE_METRICS: "true"
+        SERVICE_ENABLE_TRACING: "false"
+      ports:
+        - "8111:8000"
+      depends_on:
+        - kafka
+      networks: [datanet]
+
+    recommendation-service:
+      build:
+        context: .
+        dockerfile: services/Dockerfile
+        args:
+          SERVICE_MODULE: services.recommendation_service.app.main:app
+      environment:
+        SERVICE_APP_NAME: Recommendation Service
+        SERVICE_ENVIRONMENT: local
+        SERVICE_LOG_LEVEL: INFO
+        SERVICE_ENABLE_METRICS: "true"
+        SERVICE_ENABLE_TRACING: "false"
+      ports:
+        - "8112:8000"
+      depends_on:
+        - kafka
+      networks: [datanet]
+
+    review-service:
+      build:
+        context: .
+        dockerfile: services/Dockerfile
+        args:
+          SERVICE_MODULE: services.review_service.app.main:app
+      environment:
+        SERVICE_APP_NAME: Review Service
+        SERVICE_ENVIRONMENT: local
+        SERVICE_LOG_LEVEL: INFO
+        SERVICE_ENABLE_METRICS: "true"
+        SERVICE_ENABLE_TRACING: "false"
+      ports:
+        - "8113:8000"
+      depends_on:
+        - postgres
+      networks: [datanet]
   # Debezium Kafka Connect (CDC từ MySQL -> Kafka)
   connect:
     image: quay.io/debezium/connect:2.6
@@ -250,13 +395,15 @@ services:
       - CASSANDRA_DC=dc1
       - CASSANDRA_RACK=rack1
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
-      - MAX_HEAP_SIZE=512M
-      - HEAP_NEWSIZE=128M
+      - MAX_HEAP_SIZE=256M
+      - HEAP_NEWSIZE=64M
       - LOCAL_JMX=no
     ports:
       - "9042:9042"
     volumes:
       - cassandra_data1:/var/lib/cassandra
+      - ./cassandra/jmx/jmxremote.password:/etc/cassandra/jmxremote.password
+      - ./cassandra/jmx/jmxremote.access:/etc/cassandra/jmxremote.access
     networks: [datanet]
 
   cassandra-node2:
@@ -270,11 +417,13 @@ services:
       - CASSANDRA_RACK=rack1
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
       - CASSANDRA_SEEDS=cassandra-seed
-      - MAX_HEAP_SIZE=512M
-      - HEAP_NEWSIZE=128M
+      - MAX_HEAP_SIZE=256M
+      - HEAP_NEWSIZE=64M
       - LOCAL_JMX=no
     volumes:
       - cassandra_data2:/var/lib/cassandra
+      - ./cassandra/jmx/jmxremote.password:/etc/cassandra/jmxremote.password
+      - ./cassandra/jmx/jmxremote.access:/etc/cassandra/jmxremote.access
     networks: [datanet]
 
   cassandra-node3:
@@ -288,11 +437,13 @@ services:
       - CASSANDRA_RACK=rack1
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
       - CASSANDRA_SEEDS=cassandra-seed
-      - MAX_HEAP_SIZE=512M
-      - HEAP_NEWSIZE=128M
+      - MAX_HEAP_SIZE=256M
+      - HEAP_NEWSIZE=64M
       - LOCAL_JMX=no
     volumes:
       - cassandra_data3:/var/lib/cassandra
+      - ./cassandra/jmx/jmxremote.password:/etc/cassandra/jmxremote.password
+      - ./cassandra/jmx/jmxremote.access:/etc/cassandra/jmxremote.access
     networks: [datanet]
 
   # Apache CouchDB (document store)
@@ -322,4 +473,102 @@ services:
       - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks: [datanet]
+
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks: [datanet]
+
+  customer-service:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_MODULE: services.customer_service.app.main:app
+    environment:
+      SERVICE_APP_NAME: Customer Service
+      SERVICE_ENVIRONMENT: local
+      SERVICE_LOG_LEVEL: INFO
+      SERVICE_ENABLE_METRICS: "true"
+      SERVICE_ENABLE_TRACING: "false"
+    ports:
+      - "8101:8000"
+    depends_on:
+      - postgres
+    networks: [datanet]
+
+  catalog-service:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_MODULE: services.catalog_service.app.main:app
+    environment:
+      SERVICE_APP_NAME: Catalog Service
+      SERVICE_ENVIRONMENT: local
+      SERVICE_LOG_LEVEL: INFO
+      SERVICE_ENABLE_METRICS: "true"
+      SERVICE_ENABLE_TRACING: "false"
+    ports:
+      - "8102:8000"
+    depends_on:
+      - postgres
+    networks: [datanet]
+
+  pricing-service:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_MODULE: services.pricing_service.app.main:app
+    environment:
+      SERVICE_APP_NAME: Pricing Service
+      SERVICE_ENVIRONMENT: local
+      SERVICE_LOG_LEVEL: INFO
+      SERVICE_ENABLE_METRICS: "true"
+      SERVICE_ENABLE_TRACING: "false"
+    ports:
+      - "8103:8000"
+    depends_on:
+      - postgres
+    networks: [datanet]
+
+  cart-service:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_MODULE: services.cart_service.app.main:app
+    environment:
+      SERVICE_APP_NAME: Cart Service
+      SERVICE_ENVIRONMENT: local
+      SERVICE_LOG_LEVEL: INFO
+      SERVICE_ENABLE_METRICS: "true"
+      SERVICE_ENABLE_TRACING: "false"
+      CART_REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8104:8000"
+    depends_on:
+      - redis
+    networks: [datanet]
+
+  order-service:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_MODULE: services.order_service.app.main:app
+    environment:
+      SERVICE_APP_NAME: Order Service
+      SERVICE_ENVIRONMENT: local
+      SERVICE_LOG_LEVEL: INFO
+      SERVICE_ENABLE_METRICS: "true"
+      SERVICE_ENABLE_TRACING: "false"
+    ports:
+      - "8105:8000"
+    depends_on:
+      - postgres
     networks: [datanet]

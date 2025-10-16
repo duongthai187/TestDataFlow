@@ -44,7 +44,7 @@ groups:
           severity: warning
         annotations:
           summary: "Dung lượng MinIO còn ít"
-          description: "Chỉ còn {{ $value | humanizeBinary }} dung lượng trống"
+          description: "Chỉ còn {{ $value | humanize1024 }} dung lượng trống"
 
       - alert: TrinoQueuedQueriesHigh
         expr: trino_execution_queuedqueries > 5

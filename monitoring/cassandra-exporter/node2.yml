@@ -1,4 +1,6 @@
 hostPort: cassandra-node2:7199
+username: controlRole
+password: control
 lowercaseOutputName: true
 lowercaseOutputLabelNames: true
 
