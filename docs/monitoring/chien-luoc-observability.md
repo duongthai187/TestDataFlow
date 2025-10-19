@@ -14,6 +14,7 @@ Loki + Promtail (log aggregation) → Grafana Explore
 Tempo (tuỳ chọn) để truy vết job khi bổ sung OpenTelemetry
 ```
 - **Triển khai**: `docker-compose.monitoring.yml` bao gồm Prometheus, Grafana, Alertmanager, Loki, Promtail, cAdvisor, Kafka exporter, JMX exporter cho Cassandra/Trino/Kafka Connect, mysqld-exporter, postgres-exporter, MinIO metrics và blackbox exporter. Khởi chạy toàn bộ stack bằng `docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d`.
+- **Service health**: mỗi microservice FastAPI expost `/health`; Docker Compose cài `restart: unless-stopped` và healthcheck chuẩn, đồng thời dùng `depends_on.condition: service_healthy` để đảm bảo service phụ thuộc (ví dụ support-service → order/payment/fulfillment) chỉ chạy sau khi dependency lên ổn định. Đây là lớp bảo vệ đầu tiên trước khi metric/alert phản ánh sự cố.
 - **Kết nối metric**:
   - Kafka: bật `JMX_PORT=9999`, Prometheus đọc qua `kafka-exporter:9308`.
   - Flink: `metrics.reporters.prom.class=org.apache.flink.metrics.prometheus.PrometheusReporter` (cổng 9249/9250).
@@ -30,6 +31,8 @@ Tempo (tuỳ chọn) để truy vết job khi bổ sung OpenTelemetry
 - **Flink**: từ REST API (port 8081) và Prometheus `flink_taskmanager_Status_JVM_CPU_Load`, `flink_jobmanager_job_latency`.
 - **Cassandra**: `org_apache_cassandra_metrics_clientrequest_latency`, `pending_tasks`.
 - **Spark**: servlet Prometheus `/metrics/prometheus`, chỉ số `up{job="spark-master"}`, `spark_worker_*`.
+- **Notification service**: `notification_sent_total`, `notification_failure_total`, `notification_rate_limited_total`, `notification_opt_out_total`, `notification_events_dropped_total{reason=*}`, latency histogram `notification_send_latency_seconds`, cùng counter `notification_rate_limit_errors_total{operation=*}` để phát hiện Redis gặp sự cố. Dashboard `Dataflow Overview` cung cấp các panel "Notification send rate", "Notification rate limited", "Notification drops by reason", "Opt-outs & preference updates" để drill-down.
+- **Support service**: `support_timeline_collect_seconds{source=*}` (đo thời gian rebuild timeline), `support_timeline_cache_events_total{event=*}` (hit/miss/write/invalidate/error), `support_timeline_collection_failures_total{stage=*}` (http/cache/cache_decode/aggregate), `support_attachment_backlog_bytes`, `support_attachment_backlog_files`, `support_ticket_created_total`, `support_conversation_added_total`, `support_ticket_status_changed_total`. Dashboard hiển thị panel "Support timeline p95 latency" và "Support attachment backlog" để phát hiện gây tắc nghẽn vận hành.
 - **Paimon/Nessie**: theo dõi log commit (Loki query `service="flink-jobmanager"`) và `probe_success{instance="http://nessie:19120/q/health/ready"}`.
 - **MinIO**: `minio_cluster_capacity_free_bytes`, `minio_cluster_capacity_total_bytes`, HTTP probe thành công.
 - **Kafka Connect**: `kafka_connect_worker_connector_count`, `kafka_connect_worker_task_count`, `kafka_connect_connector_failed_task_count`.
@@ -62,6 +65,11 @@ spec:
       labels:
         severity: warning
 ```
+Các rule mới cho notification service giúp phát hiện nhanh:
+- `NotificationFailureRateHigh`: tỷ lệ lỗi gửi > 20% trong 10 phút.
+- `NotificationRateLimitedBurst`: phát hiện hơn 5 lượt bị rate limit trong 5 phút.
+- `NotificationOptOutSpike`: khách hàng hủy nhận thông báo tăng đột biến trong 15 phút.
+
 Alertmanager gửi thông báo qua webhook/Email. Đối với sự cố nghiêm trọng, kích hoạt quy trình on-call.
 
 ## 5. Log & trace
@@ -82,6 +90,7 @@ Alertmanager gửi thông báo qua webhook/Email. Đối với sự cố nghiêm
 
 ## 7. Tự động hoá & phòng ngừa
 - Thiết lập `Flink REST API` (8081) script kiểm tra trạng thái job mỗi 5 phút; nếu phát hiện STATE `FAILED`, tự động gọi `POST /jobs/:jobid/yarn-cancel` (hoặc `/-/resubmit`).
+- Bật workflow GitHub Actions `Support Synthetic Probe` (cron 02:00 UTC) để chạy synthetic timeline probe và `offload_support_attachments.py --dry-run`, đảm bảo cả hai script hoạt động liên tục và cảnh báo sớm khi timeline tăng latency.
 - Dùng `Kafka Cruise Control` (hoặc script) cân bằng partition khi phát hiện `leader imbalance`.
 - Lập lịch job Spark kiểm tra tính toàn vẹn dữ liệu (ví dụ so sánh tổng tiền đơn hàng giữa MySQL và bảng `finance_fact`).
 - Bảo vệ S3/MinIO bằng lifecycle rule và cảnh báo dung lượng.

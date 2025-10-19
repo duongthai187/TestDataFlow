@@ -258,6 +258,269 @@
       ],
       "title": "HTTP probe success",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 48},
+      "id": 12,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom"},
+        "tooltip": {"mode": "single"}
+      },
+      "targets": [
+        {
+          "expr": "sum by (channel) (rate(notification_sent_total[5m]))",
+          "legendFormat": "sent {{channel}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (channel) (rate(notification_failure_total[5m]))",
+          "legendFormat": "failed {{channel}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Notification send rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 48},
+      "id": 13,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom"}
+      },
+      "targets": [
+        {
+          "expr": "sum by (channel) (rate(notification_rate_limited_total[5m]))",
+          "legendFormat": "rate limited {{channel}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Notification rate limited",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 56},
+      "id": 14,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom"}
+      },
+      "targets": [
+        {
+          "expr": "sum by (reason) (rate(notification_events_dropped_total[5m]))",
+          "legendFormat": "dropped {{reason}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Notification drops by reason",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 56},
+      "id": 15,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom"}
+      },
+      "targets": [
+        {
+          "expr": "sum by (channel) (rate(notification_opt_out_total[5m]))",
+          "legendFormat": "opt-out {{channel}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (channel) (rate(notification_preference_updates_total[5m]))",
+          "legendFormat": "preference update {{channel}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Opt-outs & preference updates",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 64},
+      "id": 16,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom"}
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, source) (rate(support_timeline_collect_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{source}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Support timeline p95 latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "files"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 64},
+      "id": 17,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom"}
+      },
+      "targets": [
+        {
+          "expr": "support_attachment_backlog_bytes",
+          "legendFormat": "bytes",
+          "refId": "A"
+        },
+        {
+          "expr": "support_attachment_backlog_files",
+          "legendFormat": "files",
+          "refId": "B"
+        }
+      ],
+      "title": "Support attachment backlog",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 72},
+      "id": 18,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom"}
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation) (rate(notification_rate_limit_errors_total[5m]))",
+          "legendFormat": "operation {{operation}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Notification rate limiter errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 72},
+      "id": 19,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom"}
+      },
+      "targets": [
+        {
+          "expr": "sum by (event) (rate(support_timeline_cache_events_total[5m]))",
+          "legendFormat": "cache {{event}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Support timeline cache events",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 80},
+      "id": 20,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom"}
+      },
+      "targets": [
+        {
+          "expr": "sum by (stage) (rate(support_timeline_collection_failures_total[5m]))",
+          "legendFormat": "failure {{stage}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Support timeline failure stages",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -270,5 +533,5 @@
   "timezone": "",
   "title": "Dataflow Overview",
   "uid": "dataflow-overview",
-  "version": 2
+  "version": 4
 }

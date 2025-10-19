@@ -36,10 +36,11 @@
   - `GET /support/cases/{id}` (with optional `includeTimeline` query to embed aggregated data from Trino or direct service calls during Wave 3).
   - `POST /support/cases/{id}/messages` (append conversation entry).
   - `POST /support/cases/{id}/close` (close ticket).
+  - `POST /support/cases/{id}/timeline/refresh` (explicitly refresh aggregated timeline and clear cache).
 - **Attachments**: upload endpoint storing file to MinIO `support/cases/<id>/attachments/` (placeholder file storage with metadata in DB).
 - **Timeline Aggregation**:
   - For MVP, call order-service, payment-service, fulfillment-service synchronously (later replaced by Trino view). Handle timeouts gracefully.
-  - Cache timeline results in Redis to reduce load (TTL 5 minutes).
+  - Cache timeline results in Redis to reduce load (TTL 5 minutes). Configure via `SERVICE_REDIS_URL`, `SERVICE_ORDER_SERVICE_URL`, `SERVICE_PAYMENT_SERVICE_URL`, `SERVICE_FULFILLMENT_SERVICE_URL`.
 - **Events**: publish `support.case.opened.v1`, `support.case.updated.v1`, `support.case.closed.v1`.
 - **Integration**: consume `fulfillment.shipment.updated` to append timeline notes automatically.
 
@@ -85,6 +86,7 @@
 - Extend Grafana: `Fulfillment SLA`, `Support Response Time`, `Notification Delivery` dashboards.
 - Prometheus exporters: track queue lengths, error rates; add Alertmanager rules (delayed shipments, high notification failure rate).
 - Loki logging pipeline: structured logs with `service`, `order_id`, `ticket_id`, `notification_id`.
+- Support timeline endpoint now enriches responses with external order/payment/shipment data when `includeTimeline=true`, backed by Redis cache.
 
 ## 9. Risks & Mitigations
 - **MinIO availability**: implement retry/backoff when storing attachments/labels; log fallback if storage fails (simulate in scenario).

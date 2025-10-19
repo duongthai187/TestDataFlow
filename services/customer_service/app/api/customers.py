@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from ..dependencies import get_repository
 from ..models import CustomerAddress, CustomerProfile
@@ -98,12 +98,13 @@ async def update_customer(
     return _serialize_customer(profile)
 
 
-@router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{customer_id}")
 async def delete_customer(
     customer_id: int, repo: CustomerRepository = Depends(get_repository)
-) -> None:
+) -> Response:
     profile = await _require_customer(customer_id, repo)
     await repo.delete_customer(profile)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{customer_id}/segments", response_model=CustomerSegmentResponse, status_code=status.HTTP_201_CREATED)
@@ -118,9 +119,10 @@ async def assign_segment(
     return CustomerSegmentResponse.model_validate(segment, from_attributes=True)
 
 
-@router.delete("/{customer_id}/segments", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{customer_id}/segments")
 async def clear_segments(
     customer_id: int, repo: CustomerRepository = Depends(get_repository)
-) -> None:
+) -> Response:
     profile = await _require_customer(customer_id, repo)
     await repo.remove_segments(profile)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

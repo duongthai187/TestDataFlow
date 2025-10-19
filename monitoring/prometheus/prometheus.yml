@@ -82,6 +82,23 @@ scrape_configs:
     static_configs:
       - targets: ["trino-exporter:9405"]
 
+  - job_name: app-services
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - cart-service:8000
+          - catalog-service:8000
+          - customer-service:8000
+          - fulfillment-service:8000
+          - inventory-service:8000
+          - notification-service:8000
+          - order-service:8000
+          - payment-service:8000
+          - pricing-service:8000
+          - recommendation-service:8000
+          - review-service:8000
+          - support-service:8000
+
   - job_name: service-probes
     metrics_path: /probe
     params:

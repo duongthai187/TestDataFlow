@@ -13,7 +13,7 @@
    - Alert Prometheus/Alertmanager, log anomalies qua Grafana Loki.
    - Agent CS hoặc user báo lỗi -> tạo ticket.
 2. **Chuẩn đoán**
-   - Kiểm tra `docker compose ps`, xác nhận container.
+   - Kiểm tra `docker compose ps --format "table {{.Name}}\t{{.State}}\t{{.Health}}"`, xác nhận container. Health check `healthy` phản ánh việc endpoint `/health` phản hồi OK; nếu `starting`/`unhealthy`, xem log `docker compose logs <service>` để xử lý trước khi tác động downstream.
    - Xem Grafana dashboard `Dataflow Overview` (panel Service availability, Cassandra latency, MySQL/PostgreSQL connection, Kafka Connect, Trino, MinIO, HTTP probe).
    - Dùng Flink REST API (8081) lấy trạng thái job (`/jobs/:jobid`).
    - Dùng `nodetool status` cho Cassandra, `bin/kafka-topics.sh --describe` cho Kafka, `minio client admin info` khi cần.
@@ -79,6 +79,25 @@
    1. Liệt kê session (`SHOW PROCESSLIST`, `SELECT * FROM pg_stat_activity`).
    2. Giảm pool size của ứng dụng, kiểm tra slow query.
    3. Tăng tài nguyên hoặc replica đọc nếu cần.
+
+### Thông báo gửi thất bại hàng loạt
+- **Triệu chứng**: Alert `NotificationFailureRateHigh` kích hoạt, panel Grafana "Notification send rate" hiển thị tỷ lệ thất bại > 20% hoặc các alert `NotificationRateLimitedBurst`, `NotificationOptOutSpike`, `NotificationRateLimiterErrors` đồng thời bật. Metric `notification_events_dropped_total{reason=~"rate_limited|opted_out|invalid_payload"}` tăng bất thường; nếu Redis gặp vấn đề, `notification_rate_limit_errors_total{operation=*}` sẽ nhảy.
+- **Hành động**:
+   1. Mở dashboard Grafana `Dataflow Overview`, theo dõi các panel "Notification send rate", "Notification rate limited" và "Notification drops by reason" để xác định channel bị ảnh hưởng. Đối chiếu thêm "Opt-outs & preference updates" để xem biến động `notification_opt_out_total`.
+   2. Nếu tăng `NotificationRateLimitedBurst`, kiểm tra cấu hình Redis rate limiter (`notification_rate_limit`, `notification_rate_window_seconds`) và lưu lượng chiến dịch hiện tại; tạm thời giảm batch size hoặc giãn lịch gửi trước khi nâng quota. Đồng thời quan sát `notification_rate_limit_errors_total{operation=*}` để xác định lỗi kết nối Redis và cân nhắc chuyển sang chế độ fail-open (service sẽ tự động cho phép khi Redis lỗi nhưng cần khắc phục sớm).
+   3. Nếu lý do `invalid_payload` hoặc `unsupported_topic` tăng, truy vấn Loki `container="notification-service"` để xem stacktrace, xác thực schema sự kiện nguồn (support/order/fulfillment) và rollback thay đổi gây lỗi nếu cần.
+   4. Nếu alert `NotificationOptOutSpike` bật, phối hợp marketing để rà soát nội dung chiến dịch, tạm dừng automation gây phiền nhiễu và kiểm tra trạng thái opt-in qua API `/notifications/preferences/{customerId}`.
+   5. Sau khi khắc phục, gửi thử một notification bằng API `/notifications/{id}/send` hoặc lập batch nhỏ để xác nhận; theo dõi lại các panel trong 15 phút, bảo đảm alert clear và tỷ lệ thất bại < 5%.
+
+### Timeline support chậm hoặc backlog đính kèm tăng
+- **Triệu chứng**: Alert `SupportTimelineLatencyHigh`, `SupportTimelineCollectionFailures` hoặc `SupportTimelineCacheErrors` bật; panel "Support timeline p95 latency" vượt quá 2 giây trong 10 phút, `support_timeline_collect_seconds{source="remote"}` tăng mạnh, `support_timeline_cache_events_total{event=~"miss|error"}` nhảy cao hoặc `support_timeline_collection_failures_total{stage=~"cache|cache_decode"}` xuất hiện. Đồng thời alert `SupportAttachmentBacklogHigh`/`SupportAttachmentGrowthRapid` hoặc metric `support_attachment_backlog_bytes`/`support_attachment_backlog_files` tăng liên tục.
+- **Hành động**:
+   1. Truy cập Grafana panel nói trên để xác định nguồn (cache hay remote). Nếu cache miss/ error tăng bất thường, kiểm tra Redis (`SERVICE_REDIS_URL`) và bảo đảm TTL đủ (`timeline_cache_ttl_seconds`).
+   2. Mở GitHub Actions workflow **Support Synthetic Probe** để xem kết quả chạy gần nhất (cron 02:00 UTC). Nếu workflow thất bại, tải artifact `support-service-logs` để lấy log `uvicorn`/output synthetic probe làm dữ liệu chẩn đoán.
+   3. Kiểm tra log `support-service` (Grafana Loki) để phát hiện lỗi gọi downstream (`order-service`, `payment-service`, `fulfillment-service`). Nếu có lỗi HTTP 5xx, cân nhắc degrade timeline bằng cách vô hiệu hóa tạm thời các nguồn qua `SERVICE_ORDER_SERVICE_URL`/`SERVICE_PAYMENT_SERVICE_URL`.
+   4. Chạy synthetic probe `make support-probe ARGS="--base-url <support-url>"` (hoặc trực tiếp `python scripts/synthetic/support_timeline_probe.py`) để xác thực thời gian phản hồi từ góc nhìn người dùng; lưu output JSON vào sự cố để theo dõi.
+   5. Với backlog attachment tăng, kiểm tra dung lượng thư mục `support_attachment_dir`; nếu gần đầy, dùng script `make support-offload ARGS="--age-days 30"` (hoặc `--dry-run` để audit) nhằm chuyển dữ liệu sang archive/cold storage. Đồng thời xác minh các API `/support/cases/{id}/attachments` vẫn trả về danh sách trong thời gian hợp lý (< 1s).
+   6. Sau khi xử lý, xóa cache timeline bằng endpoint `/support/cases/{id}/timeline/refresh`, xác nhận panel latency trở về < 500 ms và backlog ổn định. Cập nhật lại synthetic probe để chắc chắn không còn cảnh báo.
 
 ## 5. Bảng liên hệ on-call
 | Vai trò | Kênh | SLA phản hồi |

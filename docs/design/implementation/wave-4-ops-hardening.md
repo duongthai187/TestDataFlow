@@ -31,6 +31,11 @@
   - Standardize structured log format using `structlog` or `loguru`. Add Loki labels `service`, `tenant_region`, `order_id`.
 - **Alerting**:
   - Alertmanager rules for SLO breaches (checkout failure > threshold, replica lag > 5m, high notification failure). Provide Slack/email integration stubs.
+  - Support service alert pack: timeline p95 latency, collection failures, attachment backlog growth; align with Grafana playbooks and maintenance automation.
+
+- **Synthetic checks**:
+  - Build lightweight probes for support-service timeline (create ticket → measure latency) and attach to CI/cron for early detection.
+  - Compose stack cấu hình healthcheck chuẩn (`restart: unless-stopped`, `depends_on.condition: service_healthy`) cho toàn bộ dịch vụ lõi; microservice đều trả về `/health` nhằm đồng bộ với synthetic probe và giảm lỗi khởi động chéo.
 
 ### 3.2 Chaos & Scenario Automation
 - Scripts under `scripts/chaos/`:

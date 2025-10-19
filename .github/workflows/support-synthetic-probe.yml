@@ -1,0 +1,64 @@
+name: Support Synthetic Probe
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pip install "poetry==1.8.3"
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Start support service
+        run: |
+          nohup poetry run uvicorn services.support_service.app.main:app --host 127.0.0.1 --port 8000 > uvicorn.log 2>&1 &
+          echo $! > uvicorn.pid
+
+      - name: Wait for readiness
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://127.0.0.1:8000/health > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Support service did not become ready in time" >&2
+          exit 1
+
+      - name: Run synthetic timeline probe
+        run: poetry run python scripts/synthetic/support_timeline_probe.py --threshold-ms 2000
+
+      - name: Run attachment offload dry-run
+        run: poetry run python scripts/maintenance/offload_support_attachments.py --dry-run
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: support-service-logs
+          path: |
+            uvicorn.log
+            uvicorn.pid
+          if-no-files-found: ignore
+
+      - name: Stop support service
+        if: always()
+        run: |
+          if [ -f uvicorn.pid ]; then
+            kill $(cat uvicorn.pid) || true
+            rm uvicorn.pid
+          fi

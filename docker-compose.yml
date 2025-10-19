@@ -23,6 +23,7 @@ services:
     image: apache/kafka:latest
     hostname: kafka
     container_name: kafka
+    restart: unless-stopped
     ports:
       - "9092:9092"
       - "9999:9999"
@@ -46,157 +47,24 @@ services:
       KAFKA_JMX_HOSTNAME: 0.0.0.0
     volumes:
       - kafka_data:/var/lib/kafka/data
-    networks: [datanet]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - datanet
 
-    payment-service:
-      build:
-        context: .
-        dockerfile: services/Dockerfile
-        args:
-          SERVICE_MODULE: services.payment_service.app.main:app
-      environment:
-        SERVICE_APP_NAME: Payment Service
-        SERVICE_ENVIRONMENT: local
-        SERVICE_LOG_LEVEL: INFO
-        SERVICE_ENABLE_METRICS: "true"
-        SERVICE_ENABLE_TRACING: "false"
-      ports:
-        - "8106:8000"
-      depends_on:
-        - postgres
-        - kafka
-      networks: [datanet]
-
-    inventory-service:
-      build:
-        context: .
-        dockerfile: services/Dockerfile
-        args:
-          SERVICE_MODULE: services.inventory_service.app.main:app
-      environment:
-        SERVICE_APP_NAME: Inventory Service
-        SERVICE_ENVIRONMENT: local
-        SERVICE_LOG_LEVEL: INFO
-        SERVICE_ENABLE_METRICS: "true"
-        SERVICE_ENABLE_TRACING: "false"
-      ports:
-        - "8107:8000"
-      depends_on:
-        - postgres
-      networks: [datanet]
-
-    fulfillment-service:
-      build:
-        context: .
-        dockerfile: services/Dockerfile
-        args:
-          SERVICE_MODULE: services.fulfillment_service.app.main:app
-      environment:
-        SERVICE_APP_NAME: Fulfillment Service
-        SERVICE_ENVIRONMENT: local
-        SERVICE_LOG_LEVEL: INFO
-        SERVICE_ENABLE_METRICS: "true"
-        SERVICE_ENABLE_TRACING: "false"
-      ports:
-        - "8108:8000"
-      depends_on:
-        - postgres
-        - kafka
-      networks: [datanet]
-
-    support-service:
-      build:
-        context: .
-        dockerfile: services/Dockerfile
-        args:
-          SERVICE_MODULE: services.support_service.app.main:app
-      environment:
-        SERVICE_APP_NAME: Support Service
-        SERVICE_ENVIRONMENT: local
-        SERVICE_LOG_LEVEL: INFO
-        SERVICE_ENABLE_METRICS: "true"
-        SERVICE_ENABLE_TRACING: "false"
-      ports:
-        - "8109:8000"
-      depends_on:
-        - postgres
-      networks: [datanet]
-
-    notification-service:
-      build:
-        context: .
-        dockerfile: services/Dockerfile
-        args:
-          SERVICE_MODULE: services.notification_service.app.main:app
-      environment:
-        SERVICE_APP_NAME: Notification Service
-        SERVICE_ENVIRONMENT: local
-        SERVICE_LOG_LEVEL: INFO
-        SERVICE_ENABLE_METRICS: "true"
-        SERVICE_ENABLE_TRACING: "false"
-      ports:
-        - "8110:8000"
-      depends_on:
-        - kafka
-      networks: [datanet]
-
-    fraud-service:
-      build:
-        context: .
-        dockerfile: services/Dockerfile
-        args:
-          SERVICE_MODULE: services.fraud_service.app.main:app
-      environment:
-        SERVICE_APP_NAME: Fraud Service
-        SERVICE_ENVIRONMENT: local
-        SERVICE_LOG_LEVEL: INFO
-        SERVICE_ENABLE_METRICS: "true"
-        SERVICE_ENABLE_TRACING: "false"
-      ports:
-        - "8111:8000"
-      depends_on:
-        - kafka
-      networks: [datanet]
-
-    recommendation-service:
-      build:
-        context: .
-        dockerfile: services/Dockerfile
-        args:
-          SERVICE_MODULE: services.recommendation_service.app.main:app
-      environment:
-        SERVICE_APP_NAME: Recommendation Service
-        SERVICE_ENVIRONMENT: local
-        SERVICE_LOG_LEVEL: INFO
-        SERVICE_ENABLE_METRICS: "true"
-        SERVICE_ENABLE_TRACING: "false"
-      ports:
-        - "8112:8000"
-      depends_on:
-        - kafka
-      networks: [datanet]
-
-    review-service:
-      build:
-        context: .
-        dockerfile: services/Dockerfile
-        args:
-          SERVICE_MODULE: services.review_service.app.main:app
-      environment:
-        SERVICE_APP_NAME: Review Service
-        SERVICE_ENVIRONMENT: local
-        SERVICE_LOG_LEVEL: INFO
-        SERVICE_ENABLE_METRICS: "true"
-        SERVICE_ENABLE_TRACING: "false"
-      ports:
-        - "8113:8000"
-      depends_on:
-        - postgres
-      networks: [datanet]
   # Debezium Kafka Connect (CDC từ MySQL -> Kafka)
   connect:
     image: quay.io/debezium/connect:2.6
-    depends_on: [kafka]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
     ports:
       - "8083:8083"
       - "9102:9102"
@@ -214,12 +82,23 @@ services:
       KAFKA_JMX_PORT: 9102
       KAFKA_JMX_HOSTNAME: connect
       # Mở rộng dễ: thêm nhiều connector cho nhiều DB nguồn
-    networks: [datanet]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:8083/connectors >/dev/null
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - datanet
 
   # OLTP demo
   mysql:
     image: mysql:8.0
-    command: ["--default-authentication-plugin=mysql_native_password"]
+    command:
+      - --default-authentication-plugin=mysql_native_password
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: oltp
@@ -231,12 +110,24 @@ services:
       - mysql_data:/var/lib/mysql
       - ./mysql/conf.d:/etc/mysql/conf.d
       # ./mysql/init:/docker-entrypoint-initdb.d  # (sẽ dùng ở bước 2 để tạo schema + dữ liệu)
-    networks: [datanet]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h localhost -uroot -proot >/dev/null 2>&1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - datanet
 
   # Apache Doris (standalone demo: FE + BE trong 1 container)
   doris:
     image: dyrnq/doris:latest
-    depends_on: [kafka]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
     ports:
       - "8030:8030"  # FE HTTP
       - "8040:8040"  # BE Web
@@ -245,12 +136,14 @@ services:
       - DORIS_HEAP_OPTS=-Xms1g -Xmx1g
     volumes:
       - doris_data:/opt/doris
-    networks: [datanet]
+    networks:
+      - datanet
 
   # MinIO (S3 for Iceberg)
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
+    restart: unless-stopped
     environment:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: admin12345
@@ -260,22 +153,46 @@ services:
       - "9001:9001"  # Console
     volumes:
       - minio_data:/data
-    networks: [datanet]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:9000/minio/health/live >/dev/null
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - datanet
 
   # Nessie (Iceberg REST catalog)
   nessie:
     image: ghcr.io/projectnessie/nessie:0.80.0
+    restart: unless-stopped
     environment:
       QUARKUS_HTTP_PORT: "19120"
       NESSIE_SERVER_DEFAULT_BRANCH: "main"
     ports:
       - "19120:19120"
-    networks: [datanet]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:19120/api/v2/config >/dev/null
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - datanet
 
   # Trino cho SQL ad-hoc trên Iceberg
   trino:
     image: trinodb/trino:440
-    depends_on: [minio, nessie]
+    depends_on:
+      minio:
+        condition: service_healthy
+      nessie:
+        condition: service_healthy
+    restart: unless-stopped
     ports:
       - "8081:8080"
       - "9080:9080"
@@ -284,13 +201,23 @@ services:
     volumes:
       - ./trino/catalog:/etc/trino/catalog
       - trino_data:/data
-    networks: [datanet]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:8080/v1/info >/dev/null
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - datanet
 
   # Spark (batch ETL/ELT vào Iceberg)
   spark-master:
     image: apache/spark:3.5.1
     hostname: spark-master
     container_name: spark-master
+    restart: unless-stopped
     command:
       - /opt/spark/sbin/start-master.sh
       - --host
@@ -307,13 +234,25 @@ services:
       - "8082:8080"
     volumes:
       - ./monitoring/spark/metrics.properties:/opt/spark/conf/metrics.properties:ro
-    networks: [datanet]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:8080 >/dev/null
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - datanet
 
   spark-worker:
     image: apache/spark:3.5.1
     hostname: spark-worker
     container_name: spark-worker
-    depends_on: [spark-master]
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    restart: unless-stopped
     command:
       - /opt/spark/sbin/start-worker.sh
       - --webui-port
@@ -328,14 +267,18 @@ services:
       - "18083:8081"
     volumes:
       - ./monitoring/spark/metrics.properties:/opt/spark/conf/metrics.properties:ro
-    networks: [datanet]
+    networks:
+      - datanet
 
   # Apache Flink (streaming engine + Paimon connector)
   flink-jobmanager:
     image: apache/flink:1.18.1-scala_2.12
     hostname: flink-jobmanager
     container_name: flink-jobmanager
-    depends_on: [kafka]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
     command: jobmanager
     ports:
       - "8088:8081"  # Flink Web UI
@@ -358,13 +301,25 @@ services:
     volumes:
       - ./flink/lib:/opt/flink/usrlib
       - flink_checkpoints:/opt/flink/checkpoints
-    networks: [datanet]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:8081/jobs/overview >/dev/null
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - datanet
 
   flink-taskmanager:
     image: apache/flink:1.18.1-scala_2.12
     hostname: flink-taskmanager
     container_name: flink-taskmanager
-    depends_on: [flink-jobmanager]
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+    restart: unless-stopped
     command: taskmanager
     ports:
       - "9250:9250"
@@ -383,13 +338,15 @@ services:
     volumes:
       - ./flink/lib:/opt/flink/usrlib
       - flink_checkpoints:/opt/flink/checkpoints
-    networks: [datanet]
+    networks:
+      - datanet
 
   # Apache Cassandra cluster (3 nodes)
   cassandra-seed:
     image: cassandra:4.1
     hostname: cassandra-seed
     container_name: cassandra-seed
+    restart: unless-stopped
     environment:
       - CASSANDRA_CLUSTER_NAME=DataflowCluster
       - CASSANDRA_DC=dc1
@@ -404,13 +361,17 @@ services:
       - cassandra_data1:/var/lib/cassandra
       - ./cassandra/jmx/jmxremote.password:/etc/cassandra/jmxremote.password
       - ./cassandra/jmx/jmxremote.access:/etc/cassandra/jmxremote.access
-    networks: [datanet]
+    networks:
+      - datanet
 
   cassandra-node2:
     image: cassandra:4.1
     hostname: cassandra-node2
     container_name: cassandra-node2
-    depends_on: [cassandra-seed]
+    depends_on:
+      cassandra-seed:
+        condition: service_started
+    restart: unless-stopped
     environment:
       - CASSANDRA_CLUSTER_NAME=DataflowCluster
       - CASSANDRA_DC=dc1
@@ -424,13 +385,17 @@ services:
       - cassandra_data2:/var/lib/cassandra
       - ./cassandra/jmx/jmxremote.password:/etc/cassandra/jmxremote.password
       - ./cassandra/jmx/jmxremote.access:/etc/cassandra/jmxremote.access
-    networks: [datanet]
+    networks:
+      - datanet
 
   cassandra-node3:
     image: cassandra:4.1
     hostname: cassandra-node3
     container_name: cassandra-node3
-    depends_on: [cassandra-seed]
+    depends_on:
+      cassandra-seed:
+        condition: service_started
+    restart: unless-stopped
     environment:
       - CASSANDRA_CLUSTER_NAME=DataflowCluster
       - CASSANDRA_DC=dc1
@@ -444,13 +409,15 @@ services:
       - cassandra_data3:/var/lib/cassandra
       - ./cassandra/jmx/jmxremote.password:/etc/cassandra/jmxremote.password
       - ./cassandra/jmx/jmxremote.access:/etc/cassandra/jmxremote.access
-    networks: [datanet]
+    networks:
+      - datanet
 
   # Apache CouchDB (document store)
   couchdb:
     image: couchdb:3
     hostname: couchdb
     container_name: couchdb
+    restart: unless-stopped
     environment:
       COUCHDB_USER: admin
       COUCHDB_PASSWORD: admin123
@@ -458,13 +425,23 @@ services:
       - "5984:5984"
     volumes:
       - couchdb_data:/opt/couchdb/data
-    networks: [datanet]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:5984/_up >/dev/null
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - datanet
 
   # PostgreSQL (additional relational database)
   postgres:
     image: postgres:15
     hostname: postgres
     container_name: dataflow-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app123
@@ -473,14 +450,34 @@ services:
       - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks: [datanet]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U app >/dev/null 2>&1
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - datanet
 
   redis:
     image: redis:7
     container_name: redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
-    networks: [datanet]
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - datanet
 
   customer-service:
     build:
@@ -497,8 +494,21 @@ services:
     ports:
       - "8101:8000"
     depends_on:
-      - postgres
-    networks: [datanet]
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - http://localhost:8000/health
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - datanet
 
   catalog-service:
     build:
@@ -515,8 +525,21 @@ services:
     ports:
       - "8102:8000"
     depends_on:
-      - postgres
-    networks: [datanet]
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - http://localhost:8000/health
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - datanet
 
   pricing-service:
     build:
@@ -533,8 +556,21 @@ services:
     ports:
       - "8103:8000"
     depends_on:
-      - postgres
-    networks: [datanet]
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - http://localhost:8000/health
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - datanet
 
   cart-service:
     build:
@@ -552,8 +588,21 @@ services:
     ports:
       - "8104:8000"
     depends_on:
-      - redis
-    networks: [datanet]
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - http://localhost:8000/health
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - datanet
 
   order-service:
     build:
@@ -570,5 +619,282 @@ services:
     ports:
       - "8105:8000"
     depends_on:
-      - postgres
-    networks: [datanet]
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - http://localhost:8000/health
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - datanet
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_MODULE: services.payment_service.app.main:app
+    environment:
+      SERVICE_APP_NAME: Payment Service
+      SERVICE_ENVIRONMENT: local
+      SERVICE_LOG_LEVEL: INFO
+      SERVICE_ENABLE_METRICS: "true"
+      SERVICE_ENABLE_TRACING: "false"
+    ports:
+      - "8106:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - http://localhost:8000/health
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - datanet
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_MODULE: services.inventory_service.app.main:app
+    environment:
+      SERVICE_APP_NAME: Inventory Service
+      SERVICE_ENVIRONMENT: local
+      SERVICE_LOG_LEVEL: INFO
+      SERVICE_ENABLE_METRICS: "true"
+      SERVICE_ENABLE_TRACING: "false"
+    ports:
+      - "8107:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - http://localhost:8000/health
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - datanet
+
+  fulfillment-service:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_MODULE: services.fulfillment_service.app.main:app
+    environment:
+      SERVICE_APP_NAME: Fulfillment Service
+      SERVICE_ENVIRONMENT: local
+      SERVICE_LOG_LEVEL: INFO
+      SERVICE_ENABLE_METRICS: "true"
+      SERVICE_ENABLE_TRACING: "false"
+    ports:
+      - "8108:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - http://localhost:8000/health
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - datanet
+
+  support-service:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_MODULE: services.support_service.app.main:app
+    environment:
+      SERVICE_APP_NAME: Support Service
+      SERVICE_ENVIRONMENT: local
+      SERVICE_LOG_LEVEL: INFO
+      SERVICE_ENABLE_METRICS: "true"
+      SERVICE_ENABLE_TRACING: "false"
+      SERVICE_REDIS_URL: redis://redis:6379/1
+      SERVICE_ORDER_SERVICE_URL: http://order-service:8000
+      SERVICE_PAYMENT_SERVICE_URL: http://payment-service:8000
+      SERVICE_FULFILLMENT_SERVICE_URL: http://fulfillment-service:8000
+    ports:
+      - "8109:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      fulfillment-service:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - http://localhost:8000/health
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - datanet
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_MODULE: services.notification_service.app.main:app
+    environment:
+      SERVICE_APP_NAME: Notification Service
+      SERVICE_ENVIRONMENT: local
+      SERVICE_LOG_LEVEL: INFO
+      SERVICE_ENABLE_METRICS: "true"
+      SERVICE_ENABLE_TRACING: "false"
+    ports:
+      - "8110:8000"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - http://localhost:8000/health
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - datanet
+
+  fraud-service:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_MODULE: services.fraud_service.app.main:app
+    environment:
+      SERVICE_APP_NAME: Fraud Service
+      SERVICE_ENVIRONMENT: local
+      SERVICE_LOG_LEVEL: INFO
+      SERVICE_ENABLE_METRICS: "true"
+      SERVICE_ENABLE_TRACING: "false"
+    ports:
+      - "8111:8000"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - http://localhost:8000/health
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - datanet
+
+  recommendation-service:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_MODULE: services.recommendation_service.app.main:app
+    environment:
+      SERVICE_APP_NAME: Recommendation Service
+      SERVICE_ENVIRONMENT: local
+      SERVICE_LOG_LEVEL: INFO
+      SERVICE_ENABLE_METRICS: "true"
+      SERVICE_ENABLE_TRACING: "false"
+    ports:
+      - "8112:8000"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - http://localhost:8000/health
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - datanet
+
+  review-service:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_MODULE: services.review_service.app.main:app
+    environment:
+      SERVICE_APP_NAME: Review Service
+      SERVICE_ENVIRONMENT: local
+      SERVICE_LOG_LEVEL: INFO
+      SERVICE_ENABLE_METRICS: "true"
+      SERVICE_ENABLE_TRACING: "false"
+    ports:
+      - "8113:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - http://localhost:8000/health
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - datanet

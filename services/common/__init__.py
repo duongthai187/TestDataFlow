@@ -11,6 +11,7 @@ from .database import (
     resolve_database_url,
 )
 from .cache import close_redis_connections, get_redis_client, resolve_redis
+from .kafka import KafkaConsumerStub, KafkaProducerStub
 
 __all__ = [
     "ServiceSettings",
@@ -27,4 +28,6 @@ __all__ = [
     "get_redis_client",
     "resolve_redis",
     "close_redis_connections",
+    "KafkaProducerStub",
+    "KafkaConsumerStub",
 ]

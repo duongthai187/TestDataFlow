@@ -63,3 +63,101 @@ groups:
         annotations:
           summary: "Kafka Connect có task thất bại"
           description: "Connector {{ $labels.connector }} có task lỗi, kiểm tra log connect"
+
+      - alert: NotificationFailureRateHigh
+        expr: |
+          sum(rate(notification_failure_total[5m]))
+            /
+          clamp_min(sum(rate(notification_sent_total[5m])) + sum(rate(notification_failure_total[5m])), 1)
+            > 0.2
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tỷ lệ gửi thông báo thất bại cao"
+          description: "Hơn 20% thông báo thất bại trong 10 phút qua. Kiểm tra provider hoặc hàng đợi."
+
+      - alert: NotificationRateLimitedBurst
+        expr: increase(notification_rate_limited_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Thông báo bị chặn do rate limit"
+          description: "Có {{ $value | printf \"%.0f\" }} thông báo bị rate limit trong 5 phút qua. Kiểm tra cấu hình quota và lưu lượng gửi."
+
+      - alert: NotificationOptOutSpike
+        expr: increase(notification_opt_out_total[15m]) > 20
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Khách hàng hủy nhận thông báo tăng cao"
+          description: "Có {{ $value | printf \"%.0f\" }} lượt opt-out trong 15 phút. Xem lại nội dung chiến dịch hoặc phân đoạn khách hàng."
+
+      - alert: NotificationRateLimiterErrors
+        expr: increase(notification_rate_limit_errors_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis rate limiter gặp lỗi"
+          description: |
+            Phát hiện {{ $value | printf "%.0f" }} lỗi Redis khi rate limiter xử lý trong 5 phút qua (operation={{ $labels.operation }}). Kiểm tra kết nối Redis, thông số quota và log notification-service.
+
+  - name: support-service
+    rules:
+      - alert: SupportTimelineLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(support_timeline_collect_seconds_bucket[5m])) by (le)
+          ) > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Timeline support phản hồi chậm"
+          description: |
+            P95 thời gian tổng hợp timeline > 3s trong 10 phút qua. Kiểm tra redis cache, dịch vụ phụ trợ (order/payment/fulfillment) và thông số kết nối.
+
+      - alert: SupportTimelineCollectionFailures
+        expr: increase(support_timeline_collection_failures_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Timeline support lỗi khi thu thập dữ liệu"
+          description: |
+            Timeline aggregator gặp lỗi {{ $value | printf "%.0f" }} lần trong 5 phút. Kiểm tra log support-service và tình trạng của Redis hoặc downstream APIs.
+
+      - alert: SupportTimelineCacheErrors
+        expr: increase(support_timeline_cache_events_total{event="error"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Support timeline cache xảy ra lỗi Redis"
+          description: |
+            Có {{ $value | printf "%.0f" }} lỗi Redis khi thao tác cache timeline trong 5 phút. Kiểm tra Redis, network và xác nhận `support_timeline_collection_failures_total` để đánh giá ảnh hưởng đến người dùng.
+
+      - alert: SupportAttachmentBacklogHigh
+        expr: support_attachment_backlog_bytes > 15 * 1024 * 1024 * 1024
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kho đính kèm support sắp đầy"
+          description: |
+            Tổng dung lượng tệp đính kèm vượt 15GB. Kích hoạt quy trình offload hoặc dọn dẹp các tệp quá hạn để tránh hết dung lượng.
+
+      - alert: SupportAttachmentGrowthRapid
+        expr: |
+          predict_linear(support_attachment_backlog_bytes[1h], 3600) - support_attachment_backlog_bytes > 3 * 1024 * 1024 * 1024
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Dung lượng đính kèm support tăng nhanh"
+          description: |
+            Dự đoán dung lượng sẽ tăng thêm >3GB trong 1 giờ tới. Xem xét offload sang cold storage hoặc đánh giá luồng upload bất thường.
