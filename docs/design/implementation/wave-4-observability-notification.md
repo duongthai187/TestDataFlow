@@ -28,7 +28,10 @@
    - Runbook mới hướng dẫn 5 bước xử lý alert notification.
    - Chiến lược observability cập nhật KPI/alert notification.
    - README monitoring nêu rõ panel mới.
-5. **Testing**
+5. **Chaos Drill**
+   - Script `scripts/chaos/notification_provider_failure.py` tái hiện lỗi provider, giúp kiểm chứng alert `NotificationFailureRateHigh` và hướng dẫn runbook.
+   - Script `scripts/chaos/notification_redis_outage.py` tạm dừng Redis, gửi loạt notification và xác nhận `notification_rate_limit_errors_total` tăng để kiểm chứng alert `NotificationRateLimiterErrors`.
+6. **Testing**
    - `pytest services/tests` (77 tests, 0 failures, 4 warnings) xác nhận không regression.
 
 ## 4. Operational Playbook
@@ -47,7 +50,7 @@
 - [x] `pytest services/tests` pass.
 
 ## 6. Follow-up Items
-1. Mở rộng observability tương tự cho support-service (timeline latency, attachment backlog) và fulfillment-service (carrier SLA).
-2. Thiết lập synthetic test gửi notification định kỳ để kiểm tra alert chain.
-3. Bổ sung scenario chaos (Redis down → metric/alert) và update runbook tương ứng.
-4. Kết nối Alertmanager → Slack channel `#data-ops` để đảm bảo alert route thực thi.
+- [ ] Mở rộng observability tương tự cho support-service (timeline latency, attachment backlog) và fulfillment-service (carrier SLA).
+- [x] Thiết lập synthetic test gửi notification định kỳ để kiểm tra alert chain (`scripts/synthetic/notification_probe.py`, workflow `Notification Synthetic Probe`).
+- [x] Bổ sung scenario chaos (Redis down → metric/alert) và update runbook tương ứng.
+- [x] Kết nối Alertmanager → Slack channel `#data-ops` để đảm bảo alert route thực thi.

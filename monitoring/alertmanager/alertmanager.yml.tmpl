@@ -1,0 +1,74 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: "default"
+  group_by: ['alertname', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 3h
+  routes:
+    - receiver: "slack-critical"
+      matchers:
+        - severity =~ "(?i)(critical|high)"
+      continue: true
+    - receiver: "email-oncall"
+      matchers:
+        - severity =~ "(?i)(critical|high|warning)"
+      continue: true
+    - receiver: "teams-oncall"
+      matchers:
+        - severity =~ "(?i)(critical|high|warning)"
+
+receivers:
+  - name: "default"
+  - name: "slack-critical"
+    slack_configs:
+      - api_url: __ALERTMANAGER_SLACK_WEBHOOK_URL__
+        channel: "#data-ops"
+        username: "DataFlow Alertmanager"
+        icon_emoji: ":rotating_light:"
+        send_resolved: true
+        title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+        text: |-
+          *Status*: {{ .Status | toUpper }}
+          *Severity*: {{ if .CommonLabels.severity }}{{ .CommonLabels.severity }}{{ else }}unknown{{ end }}
+          *Service*: {{ if .CommonLabels.service }}{{ .CommonLabels.service }}{{ else }}unknown{{ end }}
+          *Summary*: {{ if .Annotations.summary }}{{ .Annotations.summary }}{{ else }}(no summary){{ end }}
+          *Description*: {{ if .Annotations.description }}{{ .Annotations.description }}{{ else }}(no description){{ end }}
+          {{- if .GeneratorURL }}
+          <{{ .GeneratorURL }}|Open in Prometheus>
+          {{- end }}
+  - name: "email-oncall"
+    email_configs:
+      - to: __ALERTMANAGER_EMAIL_TO__
+        from: __ALERTMANAGER_EMAIL_FROM__
+        smarthost: __ALERTMANAGER_SMTP_SMARTHOST__
+        auth_username: __ALERTMANAGER_SMTP_USERNAME__
+        auth_password: __ALERTMANAGER_SMTP_PASSWORD__
+        require_tls: true
+        headers:
+          Subject: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+        html: |-
+          <p><strong>Status</strong>: {{ .Status | toUpper }}</p>
+          <p><strong>Severity</strong>: {{ if .CommonLabels.severity }}{{ .CommonLabels.severity }}{{ else }}unknown{{ end }}</p>
+          <p><strong>Service</strong>: {{ if .CommonLabels.service }}{{ .CommonLabels.service }}{{ else }}unknown{{ end }}</p>
+          <p><strong>Summary</strong>: {{ if .Annotations.summary }}{{ .Annotations.summary }}{{ else }}(no summary provided){{ end }}</p>
+          <p><strong>Description</strong>: {{ if .Annotations.description }}{{ .Annotations.description }}{{ else }}(no description provided){{ end }}</p>
+          {{- if .GeneratorURL }}
+          <p><a href="{{ .GeneratorURL }}" target="_blank" rel="noopener">Open in Prometheus</a></p>
+          {{- end }}
+        send_resolved: true
+  - name: "teams-oncall"
+    msteams_configs:
+      - webhook_url: __ALERTMANAGER_TEAMS_WEBHOOK_URL__
+        title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+        text: |-
+          **Severity**: {{ if .CommonLabels.severity }}{{ .CommonLabels.severity }}{{ else }}unknown{{ end }}
+          **Service**: {{ if .CommonLabels.service }}{{ .CommonLabels.service }}{{ else }}unknown{{ end }}
+          **Summary**: {{ if .Annotations.summary }}{{ .Annotations.summary }}{{ else }}(no summary){{ end }}
+          **Description**: {{ if .Annotations.description }}{{ .Annotations.description }}{{ else }}(no description){{ end }}
+          {{- if .GeneratorURL }}
+          [Open in Prometheus]({{ .GeneratorURL }})
+          {{- end }}
+        send_resolved: true

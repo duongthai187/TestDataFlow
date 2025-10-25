@@ -9,7 +9,7 @@
 ```
 Prometheus (thu metric) ← exporters (Kafka, Flink, Spark, Cassandra, MySQL, PostgreSQL, Trino, Kafka Connect, MinIO, Doris, blackbox)
 Grafana (dashboard tổng quan + drill-down)
-Alertmanager (cảnh báo) → Teams/Slack/Email (tích hợp sau)
+Alertmanager (cảnh báo) → Slack #data-ops (severity high/critical), Email on-call + Microsoft Teams (warning/high/critical). Config được render từ template `monitoring/alertmanager/alertmanager.yml.tmpl` thông qua script `monitoring/alertmanager/entrypoint.sh`, tự động cảnh báo khi biến môi trường chưa được đặt.
 Loki + Promtail (log aggregation) → Grafana Explore
 Tempo (tuỳ chọn) để truy vết job khi bổ sung OpenTelemetry
 ```
@@ -33,6 +33,7 @@ Tempo (tuỳ chọn) để truy vết job khi bổ sung OpenTelemetry
 - **Spark**: servlet Prometheus `/metrics/prometheus`, chỉ số `up{job="spark-master"}`, `spark_worker_*`.
 - **Notification service**: `notification_sent_total`, `notification_failure_total`, `notification_rate_limited_total`, `notification_opt_out_total`, `notification_events_dropped_total{reason=*}`, latency histogram `notification_send_latency_seconds`, cùng counter `notification_rate_limit_errors_total{operation=*}` để phát hiện Redis gặp sự cố. Dashboard `Dataflow Overview` cung cấp các panel "Notification send rate", "Notification rate limited", "Notification drops by reason", "Opt-outs & preference updates" để drill-down.
 - **Support service**: `support_timeline_collect_seconds{source=*}` (đo thời gian rebuild timeline), `support_timeline_cache_events_total{event=*}` (hit/miss/write/invalidate/error), `support_timeline_collection_failures_total{stage=*}` (http/cache/cache_decode/aggregate), `support_attachment_backlog_bytes`, `support_attachment_backlog_files`, `support_ticket_created_total`, `support_conversation_added_total`, `support_ticket_status_changed_total`. Dashboard hiển thị panel "Support timeline p95 latency" và "Support attachment backlog" để phát hiện gây tắc nghẽn vận hành.
+- **Fulfillment**: collector MinIO/Prometheus theo dõi `fulfillment_artifacts_backlog_objects`, `fulfillment_artifacts_backlog_bytes`, cùng gauge `fulfillment_lag_minutes` (chênh lệch giữa sự kiện `status.shipped` và thời điểm artefact sẵn sàng). Dashboard bổ sung panel backlog để kiểm tra khi chaos `simulate_fulfillment_delay.py` giữ nhãn.
 - **Paimon/Nessie**: theo dõi log commit (Loki query `service="flink-jobmanager"`) và `probe_success{instance="http://nessie:19120/q/health/ready"}`.
 - **MinIO**: `minio_cluster_capacity_free_bytes`, `minio_cluster_capacity_total_bytes`, HTTP probe thành công.
 - **Kafka Connect**: `kafka_connect_worker_connector_count`, `kafka_connect_worker_task_count`, `kafka_connect_connector_failed_task_count`.
@@ -90,7 +91,7 @@ Alertmanager gửi thông báo qua webhook/Email. Đối với sự cố nghiêm
 
 ## 7. Tự động hoá & phòng ngừa
 - Thiết lập `Flink REST API` (8081) script kiểm tra trạng thái job mỗi 5 phút; nếu phát hiện STATE `FAILED`, tự động gọi `POST /jobs/:jobid/yarn-cancel` (hoặc `/-/resubmit`).
-- Bật workflow GitHub Actions `Support Synthetic Probe` (cron 02:00 UTC) để chạy synthetic timeline probe và `offload_support_attachments.py --dry-run`, đảm bảo cả hai script hoạt động liên tục và cảnh báo sớm khi timeline tăng latency.
+- Bật workflow GitHub Actions `Support Synthetic Probe` (cron 02:00 UTC) để chạy synthetic timeline probe và `offload_support_attachments.py --dry-run`, đảm bảo cả hai script hoạt động liên tục và cảnh báo sớm khi timeline tăng latency. Song song, workflow `Notification Synthetic Probe` gửi thử notification và kiểm tra metric `notification_sent_total`/`notification_failure_total` để phát hiện sớm sự cố provider hoặc rate limiter.
 - Dùng `Kafka Cruise Control` (hoặc script) cân bằng partition khi phát hiện `leader imbalance`.
 - Lập lịch job Spark kiểm tra tính toàn vẹn dữ liệu (ví dụ so sánh tổng tiền đơn hàng giữa MySQL và bảng `finance_fact`).
 - Bảo vệ S3/MinIO bằng lifecycle rule và cảnh báo dung lượng.
@@ -99,7 +100,8 @@ Alertmanager gửi thông báo qua webhook/Email. Đối với sự cố nghiêm
 - [x] Tạo compose file monitoring, mount cấu hình Prometheus.
 - [x] Bật JMX / metrics reporter cho Kafka, Spark, Flink, Cassandra, Connect, Trino, MinIO.
 - [x] Khởi tạo dashboard Grafana `Dataflow Overview` (json provisioning).
-- [ ] Thiết lập alert route (Email/Teams) và kiểm thử bằng `amtool`.
+- [x] Thiết lập alert route Slack `#data-ops` (đặt `ALERTMANAGER_SLACK_WEBHOOK_URL` trước khi chạy compose) và kiểm thử bằng các script chaos `notification_provider_failure.py`/`notification_redis_outage.py`/`simulate_replication_lag.py`.
+- [x] Thiết lập alert route (Email/Teams) và kiểm thử bằng `amtool`.
 - [ ] Đào tạo đội ngũ vận hành đọc dashboard và xử lý runbook.
 
 Chiến lược này kết hợp metric, log và alert giúp đội ngũ chủ động nắm bắt sức khỏe hệ thống, phù hợp với tính chất realtime của nền tảng dữ liệu.

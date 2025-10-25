@@ -88,14 +88,21 @@ class NotificationService:
     async def send_notification(self, notification: Notification) -> Notification:
         start_time = monotonic()
         await self._enforce_rate_limit(notification.channel, amount=1)
-        if self.provider:
-            await self.provider.send(
-                recipient=notification.recipient,
-                channel=notification.channel,
-                subject=notification.subject,
-                body=notification.body,
-                metadata=metadata_from_json(notification.metadata_json),
+        try:
+            if self.provider:
+                await self.provider.send(
+                    recipient=notification.recipient,
+                    channel=notification.channel,
+                    subject=notification.subject,
+                    body=notification.body,
+                    metadata=metadata_from_json(notification.metadata_json),
+                )
+        except Exception as exc:
+            await self.fail_notification(
+                notification,
+                reason=self._provider_failure_reason(exc),
             )
+            raise
         sent_at = datetime.now(tz=timezone.utc)
         await self.repository.add_event(notification, event_type="sent", payload=sent_at.isoformat())
         updated = await self.repository.update_status(
@@ -109,6 +116,15 @@ class NotificationService:
         NOTIFICATION_SENT_TOTAL.labels(channel=notification.channel).inc()
         NOTIFICATION_SEND_LATENCY_SECONDS.labels(channel=notification.channel).observe(duration)
         return updated
+
+    @staticmethod
+    def _provider_failure_reason(exc: Exception) -> str:
+        message = str(exc).strip()
+        if not message:
+            message = exc.__class__.__name__
+        if len(message) > 200:
+            message = message[:197] + "..."
+        return f"provider_error: {message}"
 
     async def fail_notification(self, notification: Notification, *, reason: str) -> Notification:
         await self.repository.add_event(notification, event_type="failed", payload=reason)

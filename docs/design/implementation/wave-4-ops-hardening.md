@@ -30,7 +30,7 @@
 - **Logging**:
   - Standardize structured log format using `structlog` or `loguru`. Add Loki labels `service`, `tenant_region`, `order_id`.
 - **Alerting**:
-  - Alertmanager rules for SLO breaches (checkout failure > threshold, replica lag > 5m, high notification failure). Provide Slack/email integration stubs.
+  - Alertmanager rules for SLO breaches (checkout failure > threshold, replica lag > 5m, high notification failure). Route severity high/critical tới Slack `#data-ops` qua biến môi trường `ALERTMANAGER_SLACK_WEBHOOK_URL`; email integration sẽ bổ sung sau.
   - Support service alert pack: timeline p95 latency, collection failures, attachment backlog growth; align with Grafana playbooks and maintenance automation.
 
 - **Synthetic checks**:
@@ -39,9 +39,11 @@
 
 ### 3.2 Chaos & Scenario Automation
 - Scripts under `scripts/chaos/`:
-  - `simulate_replication_lag.py`: throttle MySQL/Postgres replication.
-  - `simulate_schema_drift.py`: add unregistered field to CouchDB/Avro schema.
-  - `simulate_ttl_oversell.py`: set Cassandra TTL low, delay payment confirmations.
+  - `notification_provider_failure.py`: create sample notifications and force `/fail` to validate alert `NotificationFailureRateHigh` and failure dashboards.
+  - `notification_redis_outage.py`: stop/start Redis around synthetic sends to trigger `notification_rate_limit_errors_total` and validate rate limiter alerting.
+  - `simulate_replication_lag.py`: pause Debezium connectors, insert MySQL rows while CDC halted, resume connectors, and report binlog delta to validate replication lag alerting.
+  - `simulate_schema_drift.py`: alter MySQL OLTP tables (add/drop unexpected column) to mimic producer schema drift and trigger Debezium/consumer failures.
+  - `simulate_ttl_oversell.py`: adjust Cassandra reservation TTL to provoke rapid expiry/oversell and validate inventory alerts.
   - `simulate_fulfillment_delay.py`: hold MinIO uploads.
 - Integrate with `pytest` or custom harness to run nightly; capture metrics snapshots.
 - Provide `Makefile` target `make chaos SCENARIO=oversell` to run script.
@@ -55,6 +57,9 @@
 - Use Faker for data; support multi-region distribution.
 - Optionally integrate with Locust/K6 for load tests.
 
+_Progress_
+- ✅ `scripts/synthetic/generate_support_cases.py` tạo ticket support + tin nhắn follow-up; gọi thông qua `make support-generate`.
+
 ### 3.4 CI/CD Integrations
 - Extend GitHub Actions pipeline:
   - Run smoke tests (bring up subset via Docker Compose in pipeline).
@@ -65,6 +70,11 @@
 
 ### 3.5 Runbooks & Documentation
 - Create runbooks under `docs/runbooks/` for each scenario (reconciliation lag, oversell, schema drift, fulfillment delay).
+  - ✅ `docs/runbooks/fulfillment-delay.md` mô tả detection/remediation cho backlog artefact Fulfillment (MinIO hold).
+  - ✅ `docs/runbooks/replication-lag.md` mô tả tình huống Debezium/Kafka Connect replication lag.
+  - ✅ `docs/runbooks/schema-drift.md` mô tả xử lý schema drift MySQL/Debezium.
+  - ✅ `docs/runbooks/ttl-oversell.md` mô tả xử lý Cassandra TTL oversell.
+  - ✅ `docs/runbooks/reconciliation-delay.md` mô tả xử lý Finance reconciliation chậm (tạm thời, bổ sung automation sau).
 - Document detection steps (Grafana panels, Prometheus queries) and remediation actions.
 - Provide onboarding doc for SRE/Support teams.
 

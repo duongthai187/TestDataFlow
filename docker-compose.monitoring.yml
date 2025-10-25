@@ -31,10 +31,18 @@ services:
     image: prom/alertmanager:v0.27.0
     hostname: alertmanager
     container_name: alertmanager
-    command:
-      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    entrypoint: ["/etc/alertmanager/entrypoint.sh"]
+    environment:
+      - ALERTMANAGER_SLACK_WEBHOOK_URL=${ALERTMANAGER_SLACK_WEBHOOK_URL:-https://hooks.slack.com/services/REPLACE/ME}
+      - ALERTMANAGER_SMTP_SMARTHOST=${ALERTMANAGER_SMTP_SMARTHOST:-smtp.example.com:587}
+      - ALERTMANAGER_SMTP_USERNAME=${ALERTMANAGER_SMTP_USERNAME:-}
+      - ALERTMANAGER_SMTP_PASSWORD=${ALERTMANAGER_SMTP_PASSWORD:-}
+      - ALERTMANAGER_EMAIL_FROM=${ALERTMANAGER_EMAIL_FROM:-alertmanager@example.com}
+      - ALERTMANAGER_EMAIL_TO=${ALERTMANAGER_EMAIL_TO:-alerts@example.com}
+      - ALERTMANAGER_TEAMS_WEBHOOK_URL=${ALERTMANAGER_TEAMS_WEBHOOK_URL:-https://outlook.office.com/webhook/REPLACE/ME}
     volumes:
-      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./monitoring/alertmanager/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
+      - ./monitoring/alertmanager/entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
     ports:
       - "9093:9093"
     networks: [datanet]

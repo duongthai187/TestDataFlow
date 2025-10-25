@@ -2,6 +2,7 @@
 
 ![CI](https://github.com/duongthai187/TestDataFlow/actions/workflows/ci.yml/badge.svg)
 ![Support Synthetic Probe](https://github.com/duongthai187/TestDataFlow/actions/workflows/support-synthetic-probe.yml/badge.svg)
+![Notification Synthetic Probe](https://github.com/duongthai187/TestDataFlow/actions/workflows/notification-synthetic-probe.yml/badge.svg)
 
 This repository hosts the ecommerce microservices platform scaffolding (Wave 0) for the DataFlow program. It provides a FastAPI-based mono-repo with shared tooling, development automation, and Docker Compose integration to run all stub services and core infrastructure locally.
 
@@ -52,6 +53,12 @@ pyproject.toml     # Poetry configuration
 - `make run-service SERVICE=<name>`: run a specific service via Uvicorn (e.g. `SERVICE=customer_service`)
 - `make support-probe ARGS="..."`: run the synthetic support timeline probe (e.g. `ARGS="--base-url http://localhost:8109"`)
 - `make support-offload ARGS="..."`: execute the support attachment offload tool (use `ARGS="--dry-run"` to audit)
+- `make notification-probe ARGS="..."`: run the notification synthetic probe (e.g. `ARGS="--base-url http://localhost:8005"`)
+- `make notification-chaos-provider ARGS="..."`: generate synthetic provider failures to exercise notification alerts (e.g. `ARGS="--base-url http://localhost:8005 --count 10"`)
+- `make notification-chaos-redis ARGS="..."`: simulate Redis outages for the notification rate limiter and verify alerting (e.g. `ARGS="--base-url http://localhost:8005"`)
+- `make chaos-replication-lag ARGS="..."`: pause Debezium connectors, write synthetic MySQL load, and validate replication lag alerting (e.g. `ARGS="--connect-url http://localhost:8083 --rows 100"`)
+- `make chaos-schema-drift ARGS="..."`: add/drop unexpected columns in OLTP tables to simulate schema drift (e.g. `ARGS="--table oltp.orders --column unexpected_field"`)
+- `make chaos-ttl-oversell ARGS="..."`: shrink Cassandra reservation TTL to mimic oversell scenarios (e.g. `ARGS="--keyspace inventory --table reservations --ttl 45"`)
 
 ## Environment Configuration
 Copy `.env.example` to `.env` and adjust values when overriding defaults. Settings are prefixed with `SERVICE_` and automatically loaded by each service.
